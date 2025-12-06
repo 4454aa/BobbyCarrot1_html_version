@@ -5,6 +5,9 @@
 
 在Gemini3.0的辅助下，基于HTML5/CSS3/JavaScript复刻了经典的《Bobby Carrot 1》。本项目不依赖任何第三方库，支持关卡解析、回放系统、存档管理以及自动寻找最优解。
 
+## 🌏 在线试玩
+https://4454aa.github.io/BobbyCarrot1_html_version/
+
 ## 📂 项目目录结构
 
 本项目包含前端游戏与后端求解器两部分，目录结构如下：
