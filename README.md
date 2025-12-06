@@ -1,7 +1,7 @@
 ***
 
 
-# Bobby's Logic Adventure (Web Version + C++ Solver)
+# Bobby Carrot (Web Version + C++ Solver)
 
 在Gemini3.0的辅助下，基于HTML5/CSS3/JavaScript复刻了经典的《Bobby Carrot 1》。本项目不依赖任何第三方库，支持关卡解析、回放系统、存档管理以及自动寻找最优解。
 
