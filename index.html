@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bobby Carrot</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+
+<body>
+  <div id="menu-screen">
+    <h1>Bobby Carrot</h1>
+    <div style="margin-bottom: 15px;">
+      <button class="secondary" onclick="exportSave()">💾 导出存档</button>
+      <button class="secondary" onclick="document.getElementById('import-file').click()">📂 导入存档</button>
+      <input type="file" id="import-file" style="display: none;" onchange="importSave(this)" accept=".json">
+    </div>
+
+    <div class="tabs">
+      <button class="tab-btn active" onclick="switchTab('carrot')">胡萝卜关卡 🥕</button>
+      <button class="tab-btn" onclick="switchTab('egg')">彩蛋关卡 🥚</button>
+    </div>
+    <div id="level-list" class="level-grid"></div>
+  </div>
+
+  <div id="game-screen" class="hidden">
+    <div id="hud">
+      <button onclick="backToMenu()">⬅ 菜单</button>
+      <div class="hud-item">步数: <b id="disp-steps">0</b></div>
+      <div class="hud-item">时间: <b id="disp-time">0.0s</b></div>
+      <div class="hud-item">剩余萝卜: <b id="disp-carrot">0</b></div>
+      <div class="hud-item">剩余彩蛋坑: <b id="disp-egg">0</b></div>
+      <div class="hud-item">钥匙: <span id="disp-keys">-</span></div>
+      <button id="speed-btn" class="secondary" onclick="toggleSpeed()">⏩ x1.0</button>
+      <button class="secondary" onclick="restartLevel()">重开 (R)</button>
+    </div>
+    <div id="game-container">
+      <div id="game-grid"></div>
+
+      <div id="player-sprite"></div>
+    </div>
+    <p style="font-size: 12px; color: #888; margin-top:10px;">WASD / 方向键移动。R 重开。ESC 返回。</p>
+  </div>
+
+  <div id="msg-overlay" class="hidden">
+    <div class="msg-box">
+      <h2 id="msg-title">关卡完成!</h2>
+      <div id="msg-content"></div>
+      <div style="margin-top:20px; display:flex; gap:10px; justify-content:center;">
+        <button onclick="goToNextLevel()">下一关</button>
+        <button class="primary" onclick="backToMenu()">返回菜单</button>
+        <button class="secondary" id="btn-replay-win" onclick="startReplay()">观看回放</button>
+      </div>
+    </div>
+  </div>
+  <div id="pause-menu" class="hidden">
+    <div class="menu-box">
+      <h2>⏸ 已暂停</h2>
+      <button class="primary" onclick="togglePause()">继续游戏</button>
+      <button class="secondary" onclick="restartLevel()">重开本关</button>
+      <button class="secondary" onclick="backToMenu()">返回菜单</button>
+    </div>
+  </div>
+  <script src="js/levels.js"></script>
+  <script src="js/game.js"></script>
+  <script src="js/solutions.js" onerror="console.warn('尚未检测到解法文件 (js/solutions.js)')"></script>
+</body>
+</html>
