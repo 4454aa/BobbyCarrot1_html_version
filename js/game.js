@@ -16,6 +16,7 @@ let animStartTime = 0; // 动画开始时间 (用于 Death/Fade)
 let player = { x: 0, y: 0 };
 // 渲染坐标 (Pixel)
 let visual = { x: 0, y: 0 };
+let isAnimating = false;
 // 移动状态
 let moveState = {
   isMoving: false,
@@ -40,9 +41,14 @@ let lastFrameTime = 0;
 
 let isReplaying = false;
 let isCpuReplay = false;
-let replayQueue = []; 
+let replayQueue = [];
 let replayStepIndex = 0;
-
+let inputState = {
+  up: false,
+  down: false,
+  left: false,
+  right: false
+};
 const STORAGE_KEY = 'bobby_game_records';
 const ASSET_SOURCES = [
   'src/tileset.png',
@@ -69,7 +75,7 @@ function preloadAssets(sources) {
       img.onload = resolve;
       img.onerror = () => {
         console.warn(`无法加载资源: ${src}`);
-        resolve(); 
+        resolve();
       };
     });
   }));
@@ -81,7 +87,7 @@ window.addEventListener('load', () => {
   if (gameGrid) gameGrid.innerHTML = '<div style="color:white;padding:20px;">资源加载中...</div>';
   preloadAssets(ASSET_SOURCES).then(() => {
     if (typeof AUTO_SOLVED_PATHS !== 'undefined')
-    switchTab('carrot');
+      switchTab('carrot');
     requestAnimationFrame(gameLoop);
   });
 });
@@ -97,19 +103,34 @@ function gameLoop(timestamp) {
     if ((isReplaying || isCpuReplay) && !moveState.isMoving) {
       processReplayQueue();
     }
-
+    if (!isReplaying && !isCpuReplay && !moveState.isMoving && !isAnimating) {
+      processPlayerInput();
+    }
     updateMovementLogic(timestamp);
 
     if (!isReplaying && !isCpuReplay) {
       stats.gameTimeAccumulator += safeDt * timeScale;
       const t = (stats.gameTimeAccumulator / 1000).toFixed(1);
-      document.getElementById('disp-time').innerText = t + 's';
+      document.getElementById('hud-timer-box').innerText = t + 's';
     } else {
-      document.getElementById('disp-time').innerText = isCpuReplay ? "(参考演示)" : "(回放)";
+      document.getElementById('hud-timer-box').innerText = isCpuReplay ? "(参考 演示)" : "(回放)";
     }
   }
 
   requestAnimationFrame(gameLoop);
+}
+
+function processPlayerInput() {
+  let dx = 0, dy = 0;
+
+  if (inputState.up) dy = -1;
+  else if (inputState.down) dy = 1;
+  else if (inputState.left) dx = -1;
+  else if (inputState.right) dx = 1;
+
+  if (dx !== 0 || dy !== 0) {
+    tryMoveInput(dx, dy);
+  }
 }
 
 function toggleSpeed() {
@@ -140,7 +161,8 @@ function tryMoveInput(dx, dy) {
 
   if (!canMoveLogic(player.x, player.y, dx, dy)) {
     // 即使走不动，也原地转身
-    updatePlayerSprite(0);
+    renderAnimations(0);
+    //updatePlayerSprite(0);
     return false;
   }
 
@@ -464,6 +486,7 @@ function startGame(index, prepReplay = false, cpuMode = false) {
   replayQueue = []; // 清空队列
 
   initLevelData();
+  fitMapToScreen();
   drawGrid();
   updateHud();
 
@@ -478,7 +501,7 @@ function startGame(index, prepReplay = false, cpuMode = false) {
 
   gameState = 'playing';
   stats.gameStartTime = Date.now();
-  updateControlsVisibility(); 
+  updateControlsVisibility();
 }
 
 function initLevelData() {
@@ -524,73 +547,62 @@ function initLevelData() {
   // 全局变量，用于渲染起点地板
   window.levelStartPos = startPos;
 }
+
+function fitMapToScreen() {
+  const container = document.getElementById('game-container');
+  if (!container) return;
+  const gameWidth = cols * TILE_SIZE + 8; 
+  const screenWidth = window.innerWidth;
+  if (screenWidth < gameWidth + 20) {
+    const scale = (screenWidth - 20) / gameWidth;
+    container.style.transformOrigin = 'top center';
+    container.style.transform = `scale(${scale})`;
+  } else {
+    container.style.transform = 'none';
+  }
+}
+
+window.addEventListener('resize', fitMapToScreen);
+
 function goToNextLevel() {
-  // 1. 关闭结算弹窗
   document.getElementById('msg-overlay').classList.add('hidden');
-  
-  // 2. 获取当前模式的关卡列表
   const levels = currentTab === 'carrot' ? CARROT_LEVELS : EGG_LEVELS;
-  
-  // 3. 计算下一关索引
   let nextIdx = currentLevelIndex + 1;
-  
-  // 4. 如果是最后一关，回到第一关 (Loop)
   if (nextIdx >= levels.length) {
     nextIdx = 0;
-    // 可选：提示一下回到开头了
-    // alert("恭喜通关！回到第一关。"); 
   }
-  
-  // 5. 启动新关卡
   startGame(nextIdx, false, false);
 }
 function restartLevel() {
-  // 1. 强制关闭所有 UI 菜单
   document.getElementById('msg-overlay').classList.add('hidden');
   document.getElementById('pause-menu').classList.add('hidden');
-  
-  // 2. 如果已经在看回放、AI演示，或者已经死了/赢了，直接重开，不播动画
-  // (因为这时候播死亡动画会很怪，或者状态不对)
   if (isReplaying || isCpuReplay || gameState === 'dead' || gameState === 'won') {
     startGame(currentLevelIndex, isReplaying, isCpuReplay);
     return;
   }
-
-  // 3. 正常游戏中重开 -> 播放死亡动画
-  // 切换状态，防止继续移动
-  gameState = 'dead'; 
-  
-  // 设置动画状态
+  gameState = 'dead';
   animState = 'dying';
   animStartTime = performance.now();
-  
-  // 关键：立即刷新一次渲染，确保玩家看到切换到了死亡贴图
-  // 如果不调这个，可能要等到下一帧 requestAnimationFrame 才变，会有瞬间延迟
   const el = document.getElementById('player-sprite');
   if (el) {
     el.className = 'anim-death';
     el.style.backgroundPosition = '0 0';
   }
-
-  // 4. 等待动画播放完毕 (0.8秒) 后执行真正的重置
   setTimeout(() => {
-    // 再次检查，防止玩家在这 0.8s 内狂按 ESC 退出了
-    if (gameState === 'dead') { 
-        startGame(currentLevelIndex, isReplaying, isCpuReplay);
+    if (gameState === 'dead') {
+      startGame(currentLevelIndex, isReplaying, isCpuReplay);
     }
   }, 800);
 }
 
 function backToMenu() {
   gameState = 'stopped';
-
-  // ★ 新增：强制关闭弹窗
   document.getElementById('msg-overlay').classList.add('hidden');
   document.getElementById('pause-menu').classList.add('hidden');
   document.getElementById('game-screen').classList.add('hidden');
   document.getElementById('menu-screen').classList.remove('hidden');
   renderLevelList();
-  updateControlsVisibility(); 
+  updateControlsVisibility();
 }
 function checkWin() {
   if (stats.carrotsCollected === stats.carrotsTotal &&
@@ -612,15 +624,15 @@ function checkWin() {
     setTimeout(() => {
       showWinMsg(finalTime);
     }, 900)
-  updateControlsVisibility(); 
+    updateControlsVisibility();
   }
 }
 
 function die(msg) {
   if (gameState === 'dead') return;
 
-  gameState = 'dead'; 
-  updateControlsVisibility(); 
+  gameState = 'dead';
+  updateControlsVisibility();
   animState = 'dying';
   animStartTime = performance.now();
   setTimeout(() => {
@@ -739,12 +751,16 @@ function saveRecord(type, idx, steps, timeStr, history) {
   }
 }
 function updateHud() {
-  document.getElementById('disp-steps').innerText = stats.steps;
   document.getElementById('disp-carrot').innerText = (stats.carrotsTotal - stats.carrotsCollected);
   document.getElementById('disp-egg').innerText = (stats.eggsTotal - stats.eggsPlanted);
-  let keys = [];
-  if (inventory.s) keys.push('<span class="t-key-s" style="display:inline-block;width:16px;height:16px;background-size:128px 96px;background-position:0 -64px;vertical-align:middle"></span>'); // 简化显示
-  else document.getElementById('disp-keys').innerText = Object.values(inventory).some(k => k) ? 'Yes' : '-';
+  const toggleKey = (id, has) => {
+    const el = document.getElementById(id);
+    if (has) el.classList.add('active');
+    else el.classList.remove('active');
+  };
+  toggleKey('key-s', inventory.s);
+  toggleKey('key-g', inventory.g);
+  toggleKey('key-c', inventory.c);
   checkFinishAnimation();
 }
 function checkFinishAnimation() {
@@ -948,14 +964,14 @@ function togglePause() {
     menu.classList.add('hidden');
     lastFrameTime = performance.now();
   }
-  updateControlsVisibility(); 
+  updateControlsVisibility();
 }
 
 function setupMobileControls() {
   const bindBtn = (id, dx, dy) => {
     const btn = document.getElementById(id);
     if (!btn) return;
-    
+
     const handleMove = (e) => {
       e.preventDefault();
       if (gameState === 'playing' && !isReplaying && !isCpuReplay) {
@@ -964,7 +980,7 @@ function setupMobileControls() {
     };
 
     btn.addEventListener('touchstart', handleMove, { passive: false });
-    btn.addEventListener('mousedown', handleMove); 
+    btn.addEventListener('mousedown', handleMove);
   };
 
   bindBtn('btn-up', 0, -1);
@@ -988,22 +1004,54 @@ function updateControlsVisibility() {
 window.addEventListener('keydown', (e) => {
   if (e.key === 'r' || e.key === 'R') { restartLevel(); return; }
   if (e.key === 'Escape') {
-    if (gameState === 'playing' || gameState === 'paused') {
-      togglePause();
-    } else {
-      backToMenu();
-    }
+    if (gameState === 'playing' || gameState === 'paused') togglePause();
+    else backToMenu();
     return;
   }
   if (gameState !== 'playing' || isReplaying || isCpuReplay) return;
-  if (moveState.isMoving) return;
-  let dx = 0, dy = 0;
-  if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') dy = -1;
-  else if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') dy = 1;
-  else if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') dx = -1;
-  else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') dx = 1;
-  if (dx !== 0 || dy !== 0) {
-    e.preventDefault();
-    tryMoveInput(dx, dy);
+  switch (e.key) {
+    case 'ArrowUp': case 'w': case 'W': inputState.up = true; break;
+    case 'ArrowDown': case 's': case 'S': inputState.down = true; break;
+    case 'ArrowLeft': case 'a': case 'A': inputState.left = true; break;
+    case 'ArrowRight': case 'd': case 'D': inputState.right = true; break;
   }
 });
+
+window.addEventListener('keyup', (e) => {
+  switch (e.key) {
+    case 'ArrowUp': case 'w': case 'W': inputState.up = false; break;
+    case 'ArrowDown': case 's': case 'S': inputState.down = false; break;
+    case 'ArrowLeft': case 'a': case 'A': inputState.left = false; break;
+    case 'ArrowRight': case 'd': case 'D': inputState.right = false; break;
+  }
+});
+
+function setupMobileControls() {
+  const bindBtn = (id, dirKey) => {
+    const btn = document.getElementById(id);
+    if (!btn) return;
+
+    const startAction = (e) => {
+      e.preventDefault();
+      if (gameState === 'playing' && !isReplaying && !isCpuReplay) {
+        inputState[dirKey] = true;
+      }
+    };
+
+    const endAction = (e) => {
+      e.preventDefault();
+      inputState[dirKey] = false;
+    };
+
+    btn.addEventListener('touchstart', startAction, { passive: false });
+    btn.addEventListener('touchend', endAction);
+    btn.addEventListener('mousedown', startAction);
+    btn.addEventListener('mouseup', endAction);
+    btn.addEventListener('mouseleave', endAction); // 鼠标移出也算松开
+  };
+
+  bindBtn('btn-up', 'up');
+  bindBtn('btn-down', 'down');
+  bindBtn('btn-left', 'left');
+  bindBtn('btn-right', 'right');
+}

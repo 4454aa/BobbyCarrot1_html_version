@@ -27,11 +27,15 @@
   <div id="game-screen" class="hidden">
     <div id="hud">
       <button onclick="backToMenu()">⬅ 菜单</button>
-      <div class="hud-item">步数: <b id="disp-steps">0</b></div>
-      <div class="hud-item">时间: <b id="disp-time">0.0s</b></div>
-      <div class="hud-item">剩余萝卜: <b id="disp-carrot">0</b></div>
-      <div class="hud-item">剩余彩蛋坑: <b id="disp-egg">0</b></div>
-      <div class="hud-item">钥匙: <span id="disp-keys">-</span></div>
+      <div class="hud-item">时间: <span id="hud-timer-box">0.0s</span></div>
+      <div class="hud-item">萝卜: <b id="disp-carrot">0</b></div>
+      <div class="hud-item">彩蛋: <b id="disp-egg">0</b></div>
+      <div class="hud-item" id="hud-keys">
+        <div id="key-s" class="hud-key-icon hk-silver"></div>
+        <div id="key-g" class="hud-key-icon hk-gold"></div>
+        <div id="key-c" class="hud-key-icon hk-copper"></div>
+      </div>
+
       <button id="speed-btn" class="secondary" onclick="toggleSpeed()">⏩ x1.0</button>
       <button class="secondary" onclick="restartLevel()">重开 (R)</button>
     </div>
@@ -76,4 +80,5 @@
   <script src="js/game.js"></script>
   <script src="js/solutions.js" onerror="console.warn('尚未检测到解法文件 (js/solutions.js)')"></script>
 </body>
+
 </html>

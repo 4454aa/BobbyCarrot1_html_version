@@ -57,6 +57,8 @@ button.secondary { background: #ff5722; }
 #hud {
   background: var(--panel-bg); padding: 8px 16px; border-radius: 8px; border: 2px solid #555;
   display: flex; gap: 15px; margin-bottom: 10px; font-size: 14px; align-items: center;
+  min-height: 44px;
+  justify-content: center;
 }
 .hud-item b { color: var(--accent); margin-left: 4px; }
 
@@ -67,6 +69,52 @@ button.secondary { background: #ff5722; }
   border-radius: 4px;
   box-shadow: 0 10px 20px rgba(0,0,0,0.5);
 }
+
+#hud-timer-box {
+  font-family: "Courier New", Courier, monospace; 
+  font-weight: bold;
+  display: inline-block;
+  width: 60px; 
+  text-align: right;
+}
+
+#hud-keys {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.hud-key-icon {
+  width: 16px; height: 16px;
+  background-image: url('../src/tileset.png');
+  background-size: 128px 96px;
+  background-size: 256px 192px; 
+  transform: scale(0.8); 
+  opacity: 0.3; 
+  filter: grayscale(100%);
+}
+
+.hud-key-icon {
+  width: 16px; height: 16px;
+  display: inline-block;
+  background-image: url('../src/tileset.png');
+  background-repeat: no-repeat;
+  image-rendering: pixelated;
+  background-size: 128px 96px; 
+  opacity: 0.3;
+  filter: grayscale(100%);
+  transition: transform 0.2s;
+}
+
+.hud-key-icon.active {
+  opacity: 1;
+  filter: none;
+  transform: scale(1.5); 
+}
+
+.hk-silver { background-position: 0px -64px; }
+.hk-gold   { background-position: -32px -64px; }
+.hk-copper { background-position: -64px -64px; }
 
 #game-grid {
   display: grid;
