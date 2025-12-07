@@ -1,4 +1,3 @@
-// ================= 全局配置与状态 =================
 const TILE_SIZE = 32;
 const BASE_FRAME_DURATION = 50; // 0.05s 一帧
 const FRAMES_PER_MOVE = 8;       // 走一格需要 8 帧
@@ -35,27 +34,56 @@ let stats = {
   moveHistory: []
 };
 
-// 系统状态
 let gameState = 'stopped'; // stopped, playing, won, dead
 let timeScale = 1.0;
 let lastFrameTime = 0;
 
-// AI/回放相关
 let isReplaying = false;
 let isCpuReplay = false;
-let replayQueue = []; // 存储待执行的动作序列
+let replayQueue = []; 
 let replayStepIndex = 0;
 
-// 存储键名
 const STORAGE_KEY = 'bobby_game_records';
+const ASSET_SOURCES = [
+  'src/tileset.png',
+  'src/BobbyCarrot.png',
+  'src/bobby_left.png',
+  'src/bobby_right.png',
+  'src/bobby_up.png',
+  'src/bobby_down.png',
+  'src/bobby_idle.png',
+  'src/bobby_death.png',
+  'src/bobby_fade.png',
+  'src/tile_conveyor_left.png',
+  'src/tile_conveyor_right.png',
+  'src/tile_conveyor_up.png',
+  'src/tile_conveyor_down.png',
+  'src/tile_finish.png'
+];
 
-// ================= 启动与循环 =================
+function preloadAssets(sources) {
+  return Promise.all(sources.map(src => {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.src = src;
+      img.onload = resolve;
+      img.onerror = () => {
+        console.warn(`无法加载资源: ${src}`);
+        resolve(); 
+      };
+    });
+  }));
+}
 
 window.addEventListener('load', () => {
-  if (typeof AUTO_SOLVED_PATHS !== 'undefined') console.log("C++ 解法数据加载成功。");
-  switchTab('carrot');
-  // 启动主循环
-  requestAnimationFrame(gameLoop);
+  setupMobileControls();
+  const gameGrid = document.getElementById('game-grid');
+  if (gameGrid) gameGrid.innerHTML = '<div style="color:white;padding:20px;">资源加载中...</div>';
+  preloadAssets(ASSET_SOURCES).then(() => {
+    if (typeof AUTO_SOLVED_PATHS !== 'undefined')
+    switchTab('carrot');
+    requestAnimationFrame(gameLoop);
+  });
 });
 
 function gameLoop(timestamp) {
@@ -63,22 +91,15 @@ function gameLoop(timestamp) {
   const safeDt = Math.min(dt, 100);
   lastFrameTime = timestamp;
 
-  // 1. 始终渲染动画 (修复死亡/通关动画不播放的问题)
-  // 传入当前时间戳用于计算帧
   renderAnimations(timestamp);
-
-  // 2. 只有在游戏中才运行逻辑 (移动、计时)
   if (gameState === 'playing') {
 
-    // 处理回放
     if ((isReplaying || isCpuReplay) && !moveState.isMoving) {
       processReplayQueue();
     }
 
-    // 处理移动逻辑插值
     updateMovementLogic(timestamp);
 
-    // 计时器累加
     if (!isReplaying && !isCpuReplay) {
       stats.gameTimeAccumulator += safeDt * timeScale;
       const t = (stats.gameTimeAccumulator / 1000).toFixed(1);
@@ -90,7 +111,7 @@ function gameLoop(timestamp) {
 
   requestAnimationFrame(gameLoop);
 }
-// 倍速切换
+
 function toggleSpeed() {
   if (timeScale === 1.0) {
     timeScale = 2.0;
@@ -103,21 +124,12 @@ function toggleSpeed() {
   document.documentElement.style.setProperty('--anim-speed', timeScale);
 }
 
-// ================= 移动核心引擎 =================
-
-// 尝试发起移动 (处理输入)
-// ================= 修复后的移动核心 =================
-
-// 1. 尝试发起移动 (处理输入、设置方向、启动动画)
 function tryMoveInput(dx, dy) {
   if (gameState !== 'playing') return false;
   if (moveState.isMoving) return false;
-
-  // ★ 1. 更新最后操作时间 (防止进入 Idle)
   lastInputTime = Date.now();
   if (animState === 'idle') animState = 'static';
   hasMovedOnce = true;
-  // ★ 2. 核心修复：在这里完整地设置移动方向
   if (dx === -1) moveState.direction = 'left';
   else if (dx === 1) moveState.direction = 'right';
   else if (dy === -1) moveState.direction = 'up';
@@ -126,9 +138,8 @@ function tryMoveInput(dx, dy) {
   const nx = player.x + dx;
   const ny = player.y + dy;
 
-  // 3. 预判逻辑 (只检查能不能走)
   if (!canMoveLogic(player.x, player.y, dx, dy)) {
-    // 即使走不动，也更新了方向（原地转身），反馈更好
+    // 即使走不动，也原地转身
     updatePlayerSprite(0);
     return false;
   }
@@ -467,7 +478,7 @@ function startGame(index, prepReplay = false, cpuMode = false) {
 
   gameState = 'playing';
   stats.gameStartTime = Date.now();
-
+  updateControlsVisibility(); 
 }
 
 function initLevelData() {
@@ -497,9 +508,6 @@ function initLevelData() {
       const ch = rowArr[x];
       if (ch === '@') {
         startPos = { x, y };
-        // 逻辑上把起点设为空地，保留 @ 在 map 里也没关系，
-        // 但为了逻辑一致，还是替换成 ' '，
-        // 渲染时单独处理起点地板。
         rowArr[x] = ' ';
       } else if (ch === '*') {
         stats.carrotsTotal++;
@@ -582,6 +590,7 @@ function backToMenu() {
   document.getElementById('game-screen').classList.add('hidden');
   document.getElementById('menu-screen').classList.remove('hidden');
   renderLevelList();
+  updateControlsVisibility(); 
 }
 function checkWin() {
   if (stats.carrotsCollected === stats.carrotsTotal &&
@@ -602,24 +611,21 @@ function checkWin() {
     // 0.9s (9帧 * 0.1s) 后显示结算窗口
     setTimeout(() => {
       showWinMsg(finalTime);
-    }, 900);
+    }, 900)
+  updateControlsVisibility(); 
   }
 }
 
 function die(msg) {
-  // 防止重复触发
   if (gameState === 'dead') return;
 
-  gameState = 'dead'; // 逻辑死亡
-
-  // ★ 切换到死亡动画状态
+  gameState = 'dead'; 
+  updateControlsVisibility(); 
   animState = 'dying';
   animStartTime = performance.now();
-
-  // 0.8s (8帧 * 0.1s) 后弹出提示
   setTimeout(() => {
     alert(msg + " 按 R 重试。");
-  }, 800);
+  }, 1000);
 }
 
 function showWinMsg(timeStr) {
@@ -673,13 +679,7 @@ function watchCpuReplay(type, idx) {
   // 填充队列
   replayQueue = parseSolutionPath(pathStr);
 }
-// ================= 修复：补全缺失的入口函数 =================
-
-// 供结算窗口按钮 onclick="startReplay()" 调用
 function startReplay() {
-  // 直接观看当前关卡的回放
-  // 注意：这里读取的是"最佳记录"。
-  // 如果你刚跑完的成绩不如历史最高分，这里回放的会是历史最高分（这是 Bobby Carrot 的经典逻辑）
   watchReplay(currentTab, currentLevelIndex);
 }
 function watchReplay(type, idx) {
@@ -936,7 +936,6 @@ function importSave(input) {
 }
 function closeMsg() { document.getElementById('msg-overlay').classList.add('hidden'); }
 function togglePause() {
-  // 只有在游戏中才能暂停
   if (gameState !== 'playing' && gameState !== 'paused') return;
 
   const menu = document.getElementById('pause-menu');
@@ -944,44 +943,65 @@ function togglePause() {
   if (gameState === 'playing') {
     gameState = 'paused';
     menu.classList.remove('hidden');
-    // 此时 gameLoop 会继续运行 requestAnimationFrame，
-    // 但逻辑更新部分被 if (gameState === 'playing') 挡住了，
-    // 只有 renderAnimations 还在跑，这符合“暂停但画面不冻结”的高级感，
-    // 或者你想完全冻结也可以。根据你的要求“暂停”，通常逻辑暂停即可。
   } else {
     gameState = 'playing';
     menu.classList.add('hidden');
-    // 恢复时需要重置 lastFrameTime，防止 dt 过大造成跳跃
     lastFrameTime = performance.now();
   }
+  updateControlsVisibility(); 
 }
-// 键盘监听
+
+function setupMobileControls() {
+  const bindBtn = (id, dx, dy) => {
+    const btn = document.getElementById(id);
+    if (!btn) return;
+    
+    const handleMove = (e) => {
+      e.preventDefault();
+      if (gameState === 'playing' && !isReplaying && !isCpuReplay) {
+        tryMoveInput(dx, dy);
+      }
+    };
+
+    btn.addEventListener('touchstart', handleMove, { passive: false });
+    btn.addEventListener('mousedown', handleMove); 
+  };
+
+  bindBtn('btn-up', 0, -1);
+  bindBtn('btn-down', 0, 1);
+  bindBtn('btn-left', -1, 0);
+  bindBtn('btn-right', 1, 0);
+}
+
+function updateControlsVisibility() {
+  const controls = document.getElementById('mobile-controls');
+  if (!controls) return;
+  const shouldShow = (gameState === 'playing') && !isReplaying && !isCpuReplay;
+
+  if (shouldShow) {
+    controls.classList.remove('hidden');
+  } else {
+    controls.classList.add('hidden');
+  }
+}
+
 window.addEventListener('keydown', (e) => {
   if (e.key === 'r' || e.key === 'R') { restartLevel(); return; }
-  // ★ 修改：ESC 触发暂停
   if (e.key === 'Escape') {
     if (gameState === 'playing' || gameState === 'paused') {
       togglePause();
     } else {
-      // 如果是在选关界面或者结算界面，ESC 可能有其他作用或者无视
       backToMenu();
     }
     return;
   }
-
-  // 移动输入只在 playing 且非回放 且非移动中 生效
   if (gameState !== 'playing' || isReplaying || isCpuReplay) return;
-
-  // 这里其实不需要检查 isMoving，因为 tryMoveInput 里有检查
-  // 但为了性能可以先挡一下
   if (moveState.isMoving) return;
-
   let dx = 0, dy = 0;
   if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') dy = -1;
   else if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') dy = 1;
   else if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') dx = -1;
   else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') dx = 1;
-
   if (dx !== 0 || dy !== 0) {
     e.preventDefault();
     tryMoveInput(dx, dy);

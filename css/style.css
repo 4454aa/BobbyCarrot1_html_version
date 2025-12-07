@@ -228,3 +228,39 @@ button.secondary { background: #ff5722; }
 }
 .menu-box h2 { margin-top: 0; color: #fff; text-align: center; }
 .menu-box button { width: 100%; padding: 10px; font-size: 16px; }
+#mobile-controls {
+  margin-top: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  touch-action: manipulation; 
+  user-select: none;
+}
+
+.dpad-row {
+  display: flex;
+  gap: 15px;
+}
+
+.dpad-btn {
+  width: 60px;
+  height: 60px;
+  background: #444;
+  border: 2px solid #666;
+  border-radius: 12px;
+  color: #fff;
+  font-size: 24px;
+  -webkit-tap-highlight-color: transparent;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  box-shadow: 0 4px 0 #222;
+  transition: transform 0.1s, box-shadow 0.1s;
+}
+
+.dpad-btn:active {
+  transform: translateY(4px);
+  box-shadow: 0 0 0 #222;
+  background: #666;
+}
