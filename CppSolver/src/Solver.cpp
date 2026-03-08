@@ -401,6 +401,50 @@ std::string GameSolver::runAnytimeWeightedAStar(const State& startS, const Solve
     return bestPath;
 }
 
+
+std::string GameSolver::runPortfolioSearch(const State& startS, const SolverConfig& config) {
+    if (config.maxNodes <= 0) return "";
+
+    int passCount = std::max(1, config.portfolioPassCount);
+    int remainingBudget = config.maxNodes;
+    std::string bestPath;
+
+    // 组合不同权重的加权 A*，提升“撞到解”的概率
+    std::vector<double> weightPool = {
+        std::max(1.0, config.weight + 2.0),
+        std::max(1.0, config.weight + 1.0),
+        std::max(1.0, config.weight),
+        std::max(1.0, config.weight * 0.75),
+        1.0
+    };
+
+    int runs = 0;
+    for (double w : weightPool) {
+        if (runs >= passCount || remainingBudget <= 0) break;
+
+        int runsLeft = passCount - runs;
+        int budgetForRun = std::max(1, remainingBudget / runsLeft);
+
+        bool pruneFlag = config.usePruning;
+        if (config.portfolioTogglePruning && (runs % 2 == 1)) {
+            pruneFlag = !pruneFlag;
+        }
+
+        SearchResult res = runWeightedAStar(startS, w, budgetForRun, pruneFlag);
+        remainingBudget -= std::min(remainingBudget, res.processed);
+
+        if (!res.path.empty()) {
+            if (bestPath.empty() || res.path.size() < bestPath.size()) {
+                bestPath = res.path;
+            }
+        }
+
+        runs++;
+    }
+
+    return bestPath;
+}
+
 std::string GameSolver::solve(const std::vector<std::string>& rawMap, double weight, int maxNodes, bool usePruning) {
     SolverConfig config;
     config.weight = weight;
@@ -441,6 +485,9 @@ std::string GameSolver::solve(const std::vector<std::string>& rawMap, const Solv
 
     if (config.strategy == SolveStrategy::AnytimeWeightedAStar) {
         return runAnytimeWeightedAStar(startS, config);
+    }
+    if (config.strategy == SolveStrategy::PortfolioSearch) {
+        return runPortfolioSearch(startS, config);
     }
     return runWeightedAStar(startS, config.weight, config.maxNodes, config.usePruning).path;
 }

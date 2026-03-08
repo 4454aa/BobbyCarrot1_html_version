@@ -24,13 +24,15 @@ int main() {
     // --- 1. 用户配置 ---
     std::cout << "=== Bobby's Solver Configuration ===" << std::endl;
 
-    std::cout << "Solve Strategy (0=Weighted A*, 1=Anytime Weighted A*) [Default: 0]: ";
+    std::cout << "Solve Strategy (0=Weighted A*, 1=Anytime Weighted A*, 2=Portfolio Search) [Default: 0]: ";
     std::string strategyLine;
     std::getline(std::cin, strategyLine);
 
     SolverConfig config;
-    if (!strategyLine.empty() && strategyLine != "0") {
+    if (strategyLine == "1") {
         config.strategy = SolveStrategy::AnytimeWeightedAStar;
+    } else if (strategyLine == "2") {
+        config.strategy = SolveStrategy::PortfolioSearch;
     }
 
     config.weight = getUserInput<double>("Weighted A* Weight (1.0 = optimal, >1.0 = faster)", 1.0);
@@ -47,17 +49,29 @@ int main() {
     if (config.strategy == SolveStrategy::AnytimeWeightedAStar) {
         config.anytimeMinWeight = getUserInput<double>("Anytime min weight (>=1.0)", 1.0);
         config.anytimeWeightDecay = getUserInput<double>("Anytime weight decay (0~1, e.g. 0.5)", 0.5);
+    } else if (config.strategy == SolveStrategy::PortfolioSearch) {
+        config.portfolioPassCount = getUserInput<int>("Portfolio pass count", 4);
+        std::cout << "Portfolio toggle pruning between passes? (0=No, 1=Yes) [Default: 1]: ";
+        std::string portfolioLine;
+        std::getline(std::cin, portfolioLine);
+        config.portfolioTogglePruning = portfolioLine.empty() || portfolioLine != "0";
     }
     
     std::cout << "------------------------------------" << std::endl;
-    std::cout << "Config: Strategy="
-              << (config.strategy == SolveStrategy::AnytimeWeightedAStar ? "Anytime Weighted A*" : "Weighted A*")
+    std::cout << "Config: Strategy=";
+    if (config.strategy == SolveStrategy::AnytimeWeightedAStar) std::cout << "Anytime Weighted A*";
+    else if (config.strategy == SolveStrategy::PortfolioSearch) std::cout << "Portfolio Search";
+    else std::cout << "Weighted A*";
+    std::cout
               << ", Weight=" << config.weight
               << ", MaxNodes=" << config.maxNodes
               << ", Pruning=" << (config.usePruning ? "ON" : "OFF");
     if (config.strategy == SolveStrategy::AnytimeWeightedAStar) {
         std::cout << ", AnytimeMinWeight=" << config.anytimeMinWeight
                   << ", AnytimeDecay=" << config.anytimeWeightDecay;
+    } else if (config.strategy == SolveStrategy::PortfolioSearch) {
+        std::cout << ", PortfolioPassCount=" << config.portfolioPassCount
+                  << ", PortfolioTogglePruning=" << (config.portfolioTogglePruning ? "ON" : "OFF");
     }
     std::cout << std::endl;
     std::cout << "------------------------------------" << std::endl;

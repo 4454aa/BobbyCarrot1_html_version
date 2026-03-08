@@ -5,7 +5,8 @@
 
 enum class SolveStrategy {
     WeightedAStar,
-    AnytimeWeightedAStar
+    AnytimeWeightedAStar,
+    PortfolioSearch
 };
 
 struct SolverConfig {
@@ -17,6 +18,10 @@ struct SolverConfig {
     // Anytime Weighted A* 参数
     double anytimeMinWeight = 1.0;
     double anytimeWeightDecay = 0.5;
+
+    // Portfolio Search 参数
+    int portfolioPassCount = 4;
+    bool portfolioTogglePruning = true;
 };
 
 class GameSolver {
@@ -45,6 +50,7 @@ private:
 
     SearchResult runWeightedAStar(const State& startS, double weight, int nodeBudget, bool usePruning);
     std::string runAnytimeWeightedAStar(const State& startS, const SolverConfig& config);
+    std::string runPortfolioSearch(const State& startS, const SolverConfig& config);
 
     // 可达性剪枝
     bool checkReachability(const State& s);
