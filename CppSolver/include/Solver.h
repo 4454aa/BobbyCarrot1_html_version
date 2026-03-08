@@ -3,21 +3,49 @@
 #include <string>
 #include <vector>
 
+enum class SolveStrategy {
+    WeightedAStar,
+    AnytimeWeightedAStar
+};
+
+struct SolverConfig {
+    double weight = 1.0;
+    int maxNodes = 2000000;
+    bool usePruning = false;
+    SolveStrategy strategy = SolveStrategy::WeightedAStar;
+
+    // Anytime Weighted A* 参数
+    double anytimeMinWeight = 1.0;
+    double anytimeWeightDecay = 0.5;
+};
+
 class GameSolver {
 public:
-    std::string solve(const std::vector<std::string>& rawMap, 
-                      double weight, 
-                      int maxNodes, 
+    std::string solve(const std::vector<std::string>& rawMap,
+                      double weight,
+                      int maxNodes,
                       bool usePruning);
+
+    std::string solve(const std::vector<std::string>& rawMap,
+                      const SolverConfig& config);
 
 private:
     int ROWS, COLS;
     int TOTAL_CARROTS, TOTAL_EGGS;
-    
+
+    struct SearchResult {
+        std::string path;
+        int processed = 0;
+        bool reachedNodeLimit = false;
+    };
+
     // 核心逻辑
-    int heuristic(const State& s, double weight); // 增加 weight 参数
+    int heuristic(const State& s, double weight);
     bool tryMove(const State& cur, int dx, int dy, State& next);
-    
+
+    SearchResult runWeightedAStar(const State& startS, double weight, int nodeBudget, bool usePruning);
+    std::string runAnytimeWeightedAStar(const State& startS, const SolverConfig& config);
+
     // 可达性剪枝
     bool checkReachability(const State& s);
 

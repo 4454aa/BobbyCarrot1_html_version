@@ -295,7 +295,122 @@ bool GameSolver::tryMove(const State& cur, int dx, int dy, State& next) {
 }
 
 
+GameSolver::SearchResult GameSolver::runWeightedAStar(const State& startS, double weight, int nodeBudget, bool usePruning) {
+    SearchResult result;
+
+    if (nodeBudget <= 0) {
+        result.reachedNodeLimit = true;
+        return result;
+    }
+
+    std::vector<State> statePool;
+    statePool.reserve(1000000);
+
+    State weightedStart = startS;
+    weightedStart.estimatedTotal = weightedStart.steps + heuristic(weightedStart, weight);
+    statePool.push_back(weightedStart);
+
+    std::priority_queue<NodeWrapper, std::vector<NodeWrapper>, std::greater<NodeWrapper>> openSet;
+    openSet.push({0, weightedStart.estimatedTotal});
+
+    std::unordered_set<State, StateHash> closedSet;
+
+    int dirs[4][2] = {{0,-1}, {0,1}, {-1,0}, {1,0}};
+
+    while (!openSet.empty()) {
+        NodeWrapper top = openSet.top();
+        openSet.pop();
+        State current = statePool[top.idx];
+
+        if (closedSet.count(current)) continue;
+        closedSet.insert(current);
+
+        result.processed++;
+        if (result.processed > nodeBudget) {
+            result.reachedNodeLimit = true;
+            return result;
+        }
+
+        if (current.carrotsCollected == TOTAL_CARROTS && current.eggsPlanted == TOTAL_EGGS) {
+            if (current.mapData[current.y * COLS + current.x] == Tiles::END) {
+                std::string path = "";
+                int currIdx = top.idx;
+                while (currIdx != 0) {
+                    path += statePool[currIdx].moveChar;
+                    currIdx = statePool[currIdx].parentIdx;
+                }
+                std::reverse(path.begin(), path.end());
+                result.path = path;
+                return result;
+            }
+        }
+
+        for (auto& d : dirs) {
+            State next;
+            if (!tryMove(current, d[0], d[1], next)) continue;
+
+            if (usePruning && !checkReachability(next)) continue;
+
+            if (closedSet.find(next) == closedSet.end()) {
+                next.parentIdx = top.idx;
+                next.estimatedTotal = next.steps + heuristic(next, weight);
+
+                statePool.push_back(next);
+                openSet.push({(int)statePool.size() - 1, next.estimatedTotal});
+            }
+        }
+    }
+
+    return result;
+}
+
+std::string GameSolver::runAnytimeWeightedAStar(const State& startS, const SolverConfig& config) {
+    if (config.maxNodes <= 0) return "";
+
+    double minWeight = std::max(1.0, config.anytimeMinWeight);
+    double decay = config.anytimeWeightDecay;
+    if (decay <= 0.0 || decay >= 1.0) decay = 0.5;
+
+    double currentWeight = std::max(config.weight, minWeight);
+    int remainingBudget = config.maxNodes;
+    std::string bestPath;
+
+    while (remainingBudget > 0) {
+        SearchResult passResult = runWeightedAStar(startS, currentWeight, remainingBudget, config.usePruning);
+        remainingBudget -= passResult.processed;
+
+        if (!passResult.path.empty()) {
+            if (bestPath.empty() || passResult.path.size() < bestPath.size()) {
+                bestPath = passResult.path;
+            }
+        }
+
+        if (!passResult.reachedNodeLimit && currentWeight <= minWeight + 1e-9) {
+            break;
+        }
+        if (remainingBudget <= 0) break;
+
+        if (currentWeight <= minWeight + 1e-9) {
+            // 已经降到最小权重，继续重复同权重意义不大
+            break;
+        }
+
+        currentWeight = std::max(minWeight, currentWeight * decay);
+    }
+
+    return bestPath;
+}
+
 std::string GameSolver::solve(const std::vector<std::string>& rawMap, double weight, int maxNodes, bool usePruning) {
+    SolverConfig config;
+    config.weight = weight;
+    config.maxNodes = maxNodes;
+    config.usePruning = usePruning;
+    config.strategy = SolveStrategy::WeightedAStar;
+    return solve(rawMap, config);
+}
+
+std::string GameSolver::solve(const std::vector<std::string>& rawMap, const SolverConfig& config) {
     ROWS = rawMap.size();
     COLS = 0;
     TOTAL_CARROTS = 0; 
@@ -322,62 +437,10 @@ std::string GameSolver::solve(const std::vector<std::string>& rawMap, double wei
     State startS;
     startS.x = startX; startS.y = startY;
     startS.mapData = initialData;
-    startS.estimatedTotal = heuristic(startS, weight);
+    startS.estimatedTotal = startS.steps + heuristic(startS, config.weight);
 
-    std::vector<State> statePool;
-    statePool.reserve(1000000); 
-    statePool.push_back(startS);
-
-    std::priority_queue<NodeWrapper, std::vector<NodeWrapper>, std::greater<NodeWrapper>> openSet;
-    openSet.push({0, startS.estimatedTotal});
-
-    std::unordered_set<State, StateHash> closedSet;
-
-    int processed = 0;
-    int dirs[4][2] = {{0,-1}, {0,1}, {-1,0}, {1,0}};
-
-    while (!openSet.empty()) {
-        NodeWrapper top = openSet.top();
-        openSet.pop();
-        State current = statePool[top.idx]; 
-        
-        if (closedSet.count(current)) continue;
-        closedSet.insert(current);
-
-        processed++;
-        if (processed > maxNodes) return ""; 
-
-        if (current.carrotsCollected == TOTAL_CARROTS && current.eggsPlanted == TOTAL_EGGS) {
-             if (current.mapData[current.y * COLS + current.x] == Tiles::END) {
-                 std::string path = "";
-                 int currIdx = top.idx;
-                 while (currIdx != 0) {
-                     path += statePool[currIdx].moveChar;
-                     currIdx = statePool[currIdx].parentIdx;
-                 }
-                 std::reverse(path.begin(), path.end());
-                 return path;
-             }
-        }
-
-        for (auto& d : dirs) {
-            State next;
-            if (tryMove(current, d[0], d[1], next)) {
-                
-                if (usePruning) {
-                    if (!checkReachability(next)) continue; 
-                }
-
-                if (closedSet.find(next) == closedSet.end()) {
-                    next.parentIdx = top.idx;
-                    next.estimatedTotal = next.steps + heuristic(next, weight); 
-                    
-                    statePool.push_back(next);
-                    openSet.push({(int)statePool.size() - 1, next.estimatedTotal});
-                }
-            }
-        }
+    if (config.strategy == SolveStrategy::AnytimeWeightedAStar) {
+        return runAnytimeWeightedAStar(startS, config);
     }
-
-    return ""; 
+    return runWeightedAStar(startS, config.weight, config.maxNodes, config.usePruning).path;
 }

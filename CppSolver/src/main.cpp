@@ -23,9 +23,18 @@ T getUserInput(const std::string& prompt, T defaultValue) {
 int main() {
     // --- 1. 用户配置 ---
     std::cout << "=== Bobby's Solver Configuration ===" << std::endl;
-    
-    double weight = getUserInput<double>("Weighted A* Weight (1.0 = optimal, >1.0 = faster)", 1.0);
-    int maxNodes = getUserInput<int>("Max Nodes Limit", 2000000);
+
+    std::cout << "Solve Strategy (0=Weighted A*, 1=Anytime Weighted A*) [Default: 0]: ";
+    std::string strategyLine;
+    std::getline(std::cin, strategyLine);
+
+    SolverConfig config;
+    if (!strategyLine.empty() && strategyLine != "0") {
+        config.strategy = SolveStrategy::AnytimeWeightedAStar;
+    }
+
+    config.weight = getUserInput<double>("Weighted A* Weight (1.0 = optimal, >1.0 = faster)", 1.0);
+    config.maxNodes = getUserInput<int>("Max Nodes Limit", 2000000);
     
     // 特殊处理 bool 输入
     std::cout << "Use Reachability Pruning? (0=No, 1=Yes) [Default: 0]: ";
@@ -33,9 +42,24 @@ int main() {
     std::getline(std::cin, line);
     bool usePruning = false;
     if (!line.empty() && line != "0") usePruning = true;
+    config.usePruning = usePruning;
+
+    if (config.strategy == SolveStrategy::AnytimeWeightedAStar) {
+        config.anytimeMinWeight = getUserInput<double>("Anytime min weight (>=1.0)", 1.0);
+        config.anytimeWeightDecay = getUserInput<double>("Anytime weight decay (0~1, e.g. 0.5)", 0.5);
+    }
     
     std::cout << "------------------------------------" << std::endl;
-    std::cout << "Config: Weight=" << weight << ", MaxNodes=" << maxNodes << ", Pruning=" << (usePruning ? "ON" : "OFF") << std::endl;
+    std::cout << "Config: Strategy="
+              << (config.strategy == SolveStrategy::AnytimeWeightedAStar ? "Anytime Weighted A*" : "Weighted A*")
+              << ", Weight=" << config.weight
+              << ", MaxNodes=" << config.maxNodes
+              << ", Pruning=" << (config.usePruning ? "ON" : "OFF");
+    if (config.strategy == SolveStrategy::AnytimeWeightedAStar) {
+        std::cout << ", AnytimeMinWeight=" << config.anytimeMinWeight
+                  << ", AnytimeDecay=" << config.anytimeWeightDecay;
+    }
+    std::cout << std::endl;
     std::cout << "------------------------------------" << std::endl;
 
 
@@ -66,7 +90,7 @@ int main() {
         auto start = std::chrono::high_resolution_clock::now();
         
         // 调用带参数的 solve
-        std::string solution = solver.solve(carrotLevels[i].rows, weight, maxNodes, usePruning);
+        std::string solution = solver.solve(carrotLevels[i].rows, config);
         
         auto end = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double> elapsed = end - start;
@@ -85,7 +109,7 @@ int main() {
     for (size_t i = 0; i < eggLevels.size(); ++i) {
         std::cout << "Egg Level " << (i + 1) << "... " << std::flush;
         // 同样的参数
-        std::string solution = solver.solve(eggLevels[i].rows, weight, maxNodes, usePruning);
+        std::string solution = solver.solve(eggLevels[i].rows, config);
         
         if (!solution.empty()) {
             std::cout << "Solved! (" << solution.length() << " steps)" << std::endl;
