@@ -31,13 +31,17 @@ std::string getStrategyName(SolveStrategy strategy) {
     if (strategy == SolveStrategy::AnytimeWeightedAStar) return "Anytime Weighted A*";
     if (strategy == SolveStrategy::PortfolioSearch) return "Portfolio Search";
     if (strategy == SolveStrategy::GreedyBestFirst) return "Greedy Best-First";
+    if (strategy == SolveStrategy::ARAStar) return "ARA*";
+    if (strategy == SolveStrategy::MHAStar) return "MHA*";
     return "Weighted A*";
 }
 
 bool strategyUsesWeight(SolveStrategy strategy) {
     return strategy == SolveStrategy::WeightedAStar ||
            strategy == SolveStrategy::AnytimeWeightedAStar ||
-           strategy == SolveStrategy::PortfolioSearch;
+           strategy == SolveStrategy::PortfolioSearch ||
+           strategy == SolveStrategy::ARAStar ||
+           strategy == SolveStrategy::MHAStar;
 }
 
 bool isDifficultEggLevel(size_t oneBasedIndex) {
@@ -60,6 +64,8 @@ void applyCliOverrides(int argc, char** argv, SolverConfig& config, bool& diffic
             if (strategy == "1") config.strategy = SolveStrategy::AnytimeWeightedAStar;
             else if (strategy == "2") config.strategy = SolveStrategy::PortfolioSearch;
             else if (strategy == "3") config.strategy = SolveStrategy::GreedyBestFirst;
+            else if (strategy == "4") config.strategy = SolveStrategy::ARAStar;
+            else if (strategy == "5") config.strategy = SolveStrategy::MHAStar;
             else config.strategy = SolveStrategy::WeightedAStar;
             continue;
         }
@@ -129,6 +135,38 @@ void applyCliOverrides(int argc, char** argv, SolverConfig& config, bool& diffic
             config.portfolioTogglePruning = parseBool01(togglePruning, config.portfolioTogglePruning);
             continue;
         }
+
+        std::string araMin = readValue(i, "--ara-min-epsilon");
+        if (!araMin.empty()) {
+            std::stringstream ss(araMin);
+            double val;
+            if (ss >> val) config.araMinEpsilon = val;
+            continue;
+        }
+
+        std::string araDecay = readValue(i, "--ara-decay");
+        if (!araDecay.empty()) {
+            std::stringstream ss(araDecay);
+            double val;
+            if (ss >> val) config.araDecay = val;
+            continue;
+        }
+
+        std::string mhaSecondary = readValue(i, "--mha-secondary-weight");
+        if (!mhaSecondary.empty()) {
+            std::stringstream ss(mhaSecondary);
+            double val;
+            if (ss >> val) config.mhaSecondaryWeight = val;
+            continue;
+        }
+
+        std::string mhaBias = readValue(i, "--mha-anchor-bias");
+        if (!mhaBias.empty()) {
+            std::stringstream ss(mhaBias);
+            double val;
+            if (ss >> val) config.mhaAnchorBias = val;
+            continue;
+        }
     }
 }
 
@@ -165,14 +203,18 @@ int main(int argc, char** argv) {
     if (config.strategy == SolveStrategy::AnytimeWeightedAStar) strategyDefault = 1;
     else if (config.strategy == SolveStrategy::PortfolioSearch) strategyDefault = 2;
     else if (config.strategy == SolveStrategy::GreedyBestFirst) strategyDefault = 3;
+    else if (config.strategy == SolveStrategy::ARAStar) strategyDefault = 4;
+    else if (config.strategy == SolveStrategy::MHAStar) strategyDefault = 5;
 
-    std::cout << "Solve Strategy (0=Weighted A*, 1=Anytime Weighted A*, 2=Portfolio Search, 3=Greedy Best-First) [Default: " << strategyDefault << "]: ";
+    std::cout << "Solve Strategy (0=Weighted A*, 1=Anytime Weighted A*, 2=Portfolio Search, 3=Greedy Best-First, 4=ARA*, 5=MHA*) [Default: " << strategyDefault << "]: ";
     std::string strategyLine;
     std::getline(std::cin, strategyLine);
     if (!strategyLine.empty()) {
         if (strategyLine == "1") config.strategy = SolveStrategy::AnytimeWeightedAStar;
         else if (strategyLine == "2") config.strategy = SolveStrategy::PortfolioSearch;
         else if (strategyLine == "3") config.strategy = SolveStrategy::GreedyBestFirst;
+        else if (strategyLine == "4") config.strategy = SolveStrategy::ARAStar;
+        else if (strategyLine == "5") config.strategy = SolveStrategy::MHAStar;
         else config.strategy = SolveStrategy::WeightedAStar;
     }
 
@@ -204,6 +246,12 @@ int main(int argc, char** argv) {
         if (!portfolioLine.empty()) {
             config.portfolioTogglePruning = portfolioLine != "0";
         }
+    } else if (config.strategy == SolveStrategy::ARAStar) {
+        config.araMinEpsilon = getUserInput<double>("ARA* min epsilon (>=1.0)", config.araMinEpsilon);
+        config.araDecay = getUserInput<double>("ARA* epsilon decay (0~1, e.g. 0.8)", config.araDecay);
+    } else if (config.strategy == SolveStrategy::MHAStar) {
+        config.mhaSecondaryWeight = getUserInput<double>("MHA* secondary heuristic weight", config.mhaSecondaryWeight);
+        config.mhaAnchorBias = getUserInput<double>("MHA* anchor bias", config.mhaAnchorBias);
     }
 
     std::cout << "------------------------------------" << std::endl;
@@ -223,6 +271,12 @@ int main(int argc, char** argv) {
     } else if (config.strategy == SolveStrategy::PortfolioSearch) {
         std::cout << ", PortfolioPassCount=" << config.portfolioPassCount
                   << ", PortfolioTogglePruning=" << (config.portfolioTogglePruning ? "ON" : "OFF");
+    } else if (config.strategy == SolveStrategy::ARAStar) {
+        std::cout << ", ARAMinEpsilon=" << config.araMinEpsilon
+                  << ", ARADecay=" << config.araDecay;
+    } else if (config.strategy == SolveStrategy::MHAStar) {
+        std::cout << ", MHASecondaryWeight=" << config.mhaSecondaryWeight
+                  << ", MHAAnchorBias=" << config.mhaAnchorBias;
     }
     std::cout << std::endl;
     std::cout << "------------------------------------" << std::endl;
@@ -263,6 +317,12 @@ int main(int argc, char** argv) {
     } else if (config.strategy == SolveStrategy::PortfolioSearch) {
         outFile << ", PortfolioPassCount=" << config.portfolioPassCount
                 << ", PortfolioTogglePruning=" << (config.portfolioTogglePruning ? "ON" : "OFF");
+    } else if (config.strategy == SolveStrategy::ARAStar) {
+        outFile << ", ARAMinEpsilon=" << config.araMinEpsilon
+                << ", ARADecay=" << config.araDecay;
+    } else if (config.strategy == SolveStrategy::MHAStar) {
+        outFile << ", MHASecondaryWeight=" << config.mhaSecondaryWeight
+                << ", MHAAnchorBias=" << config.mhaAnchorBias;
     }
     outFile << "\n";
     if (difficultOnly) {

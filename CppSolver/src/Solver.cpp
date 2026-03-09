@@ -2,6 +2,7 @@
 #include "../include/Utils.h"
 #include <queue>
 #include <unordered_set>
+#include <unordered_map>
 #include <cmath>
 #include <algorithm>
 #include <iostream>
@@ -214,17 +215,9 @@ bool GameSolver::checkDeadlockLevel2(const State& s) {
 // 核心逻辑 (Heuristic & TryMove)
 // =========================================================
 
-int GameSolver::heuristic(const State& s, double weight) {
+int GameSolver::heuristicObjectivesOnly(const State& s) {
     int remaining = (TOTAL_CARROTS - s.carrotsCollected) + (TOTAL_EGGS - s.eggsPlanted);
-    if (remaining == 0) {
-        for (size_t i = 0; i < s.mapData.size(); ++i) {
-            if (s.mapData[i] == Tiles::END) {
-                int ox = i % COLS, oy = i / COLS;
-                return (std::abs(s.x - ox) + std::abs(s.y - oy));
-            }
-        }
-        return 0; 
-    }
+    if (remaining == 0) return 0;
 
     int minDist = 9999;
     bool found = false;
@@ -237,9 +230,43 @@ int GameSolver::heuristic(const State& s, double weight) {
             found = true;
         }
     }
-    
-    double h = (found ? minDist : 0) + (remaining * 3);
-    return static_cast<int>(h * weight);
+    return (found ? minDist : 0) + (remaining * 3);
+}
+
+int GameSolver::heuristicWithDependencies(const State& s) {
+    int base = heuristicObjectivesOnly(s);
+
+    int minKeyS = 9999, minKeyG = 9999, minKeyC = 9999;
+    bool hasLockS = false, hasLockG = false, hasLockC = false;
+    for (size_t i = 0; i < s.mapData.size(); ++i) {
+        Tile t = s.mapData[i];
+        int tx = i % COLS, ty = i / COLS;
+        if (t == Tiles::KEY_S) minKeyS = std::min(minKeyS, std::abs(s.x - tx) + std::abs(s.y - ty));
+        if (t == Tiles::KEY_G) minKeyG = std::min(minKeyG, std::abs(s.x - tx) + std::abs(s.y - ty));
+        if (t == Tiles::KEY_C) minKeyC = std::min(minKeyC, std::abs(s.x - tx) + std::abs(s.y - ty));
+        if (t == Tiles::LOCK_S) hasLockS = true;
+        if (t == Tiles::LOCK_G) hasLockG = true;
+        if (t == Tiles::LOCK_C) hasLockC = true;
+    }
+
+    int penalty = 0;
+    if (!s.hasS && hasLockS) penalty += (minKeyS < 9999 ? minKeyS : 20);
+    if (!s.hasG && hasLockG) penalty += (minKeyG < 9999 ? minKeyG : 20);
+    if (!s.hasC && hasLockC) penalty += (minKeyC < 9999 ? minKeyC : 20);
+
+    int endDist = 0;
+    for (size_t i = 0; i < s.mapData.size(); ++i) {
+        if (s.mapData[i] == Tiles::END) {
+            int ox = i % COLS, oy = i / COLS;
+            endDist = std::abs(s.x - ox) + std::abs(s.y - oy);
+            break;
+        }
+    }
+    return base + penalty + endDist / 2;
+}
+
+int GameSolver::heuristic(const State& s, double weight) {
+    return static_cast<int>(heuristicObjectivesOnly(s) * weight);
 }
 
 bool GameSolver::tryMove(const State& cur, int dx, int dy, State& next) {
@@ -575,6 +602,197 @@ std::string GameSolver::runGreedyBestFirst(const State& startS, const SolverConf
     return "";
 }
 
+
+std::string GameSolver::runARAStar(const State& startS, const SolverConfig& config) {
+    if (config.maxNodes <= 0) return "";
+
+    double epsilon = std::max(1.0, config.weight);
+    double minEpsilon = std::max(1.0, config.araMinEpsilon);
+    double decay = config.araDecay;
+    if (decay <= 0.0 || decay >= 1.0) decay = 0.8;
+
+    std::unordered_map<State, int, StateHash> bestG;
+    std::vector<State> statePool;
+    statePool.reserve(1000000);
+
+    auto keyOf = [&](const State& st, double eps) { return st.steps + (int)std::round(eps * heuristicObjectivesOnly(st)); };
+
+    State st = startS;
+    st.estimatedTotal = keyOf(st, epsilon);
+    statePool.push_back(st);
+    bestG[st] = 0;
+
+    std::vector<int> openIndices = {0};
+    std::vector<int> inconsIndices;
+    std::string bestPath;
+    int bestGoalG = 1e9;
+    int processed = 0;
+
+    int dirs[4][2] = {{0,-1}, {0,1}, {-1,0}, {1,0}};
+
+    while (epsilon >= minEpsilon - 1e-9 && processed < config.maxNodes && !openIndices.empty()) {
+        std::priority_queue<NodeWrapper, std::vector<NodeWrapper>, std::greater<NodeWrapper>> openSet;
+        for (int idx : openIndices) {
+            State& node = statePool[idx];
+            node.estimatedTotal = keyOf(node, epsilon);
+            openSet.push({idx, node.estimatedTotal});
+        }
+        openIndices.clear();
+        std::unordered_set<State, StateHash> closedThisRound;
+
+        while (!openSet.empty() && processed < config.maxNodes) {
+            NodeWrapper top = openSet.top();
+            openSet.pop();
+            State current = statePool[top.idx];
+
+            auto itg = bestG.find(current);
+            if (itg == bestG.end() || current.steps != itg->second) continue;
+            if (closedThisRound.count(current)) continue;
+            closedThisRound.insert(current);
+
+            if (current.carrotsCollected == TOTAL_CARROTS && current.eggsPlanted == TOTAL_EGGS &&
+                current.mapData[current.y * COLS + current.x] == Tiles::END) {
+                if (current.steps < bestGoalG) {
+                    bestGoalG = current.steps;
+                    std::string path;
+                    int currIdx = top.idx;
+                    while (currIdx != 0) {
+                        path += statePool[currIdx].moveChar;
+                        currIdx = statePool[currIdx].parentIdx;
+                    }
+                    std::reverse(path.begin(), path.end());
+                    bestPath = path;
+                }
+                if (current.steps <= top.f) break;
+            }
+
+            processed++;
+
+            for (auto& d : dirs) {
+                State next;
+                if (!tryMove(current, d[0], d[1], next)) continue;
+                if (config.usePruning) {
+                    bool ok = (config.deadlockLevel >= 2) ? checkDeadlockLevel2(next) : checkDeadlockLevel1(next);
+                    if (!ok) continue;
+                }
+                auto best = bestG.find(next);
+                if (best == bestG.end() || next.steps < best->second) {
+                    next.parentIdx = top.idx;
+                    bestG[next] = next.steps;
+                    next.estimatedTotal = keyOf(next, epsilon);
+                    statePool.push_back(next);
+                    int nIdx = (int)statePool.size() - 1;
+                    if (closedThisRound.count(next)) inconsIndices.push_back(nIdx);
+                    else openSet.push({nIdx, next.estimatedTotal});
+                }
+            }
+        }
+
+        while (!openSet.empty()) {
+            openIndices.push_back(openSet.top().idx);
+            openSet.pop();
+        }
+        openIndices.insert(openIndices.end(), inconsIndices.begin(), inconsIndices.end());
+        inconsIndices.clear();
+
+        if (epsilon <= minEpsilon + 1e-9) break;
+        epsilon = std::max(minEpsilon, epsilon * decay);
+    }
+
+    return bestPath;
+}
+
+std::string GameSolver::runMHAStar(const State& startS, const SolverConfig& config) {
+    if (config.maxNodes <= 0) return "";
+
+    std::vector<State> statePool;
+    statePool.reserve(1000000);
+    std::unordered_map<State, int, StateHash> bestG;
+    std::unordered_set<State, StateHash> closedSet;
+
+    auto keyAnchor = [&](const State& s) { return s.steps + (int)std::round(config.weight * heuristicObjectivesOnly(s)); };
+    auto keyGuide = [&](const State& s) { return s.steps + (int)std::round(config.mhaSecondaryWeight * heuristicWithDependencies(s)); };
+
+    State start = startS;
+    start.estimatedTotal = keyAnchor(start);
+    statePool.push_back(start);
+    bestG[start] = 0;
+
+    std::priority_queue<NodeWrapper, std::vector<NodeWrapper>, std::greater<NodeWrapper>> anchorQ, guideQ;
+    anchorQ.push({0, keyAnchor(start)});
+    guideQ.push({0, keyGuide(start)});
+
+    int processed = 0;
+    int dirs[4][2] = {{0,-1}, {0,1}, {-1,0}, {1,0}};
+
+    auto reconstruct = [&](int idx){
+        std::string path;
+        while (idx != 0) {
+            path += statePool[idx].moveChar;
+            idx = statePool[idx].parentIdx;
+        }
+        std::reverse(path.begin(), path.end());
+        return path;
+    };
+
+    while (!anchorQ.empty() && processed < config.maxNodes) {
+        while (!anchorQ.empty()) {
+            State cand = statePool[anchorQ.top().idx];
+            auto it = bestG.find(cand);
+            if (it != bestG.end() && it->second == cand.steps) break;
+            anchorQ.pop();
+        }
+        while (!guideQ.empty()) {
+            State cand = statePool[guideQ.top().idx];
+            auto it = bestG.find(cand);
+            if (it != bestG.end() && it->second == cand.steps) break;
+            guideQ.pop();
+        }
+        if (anchorQ.empty()) break;
+
+        bool useGuide = false;
+        if (!guideQ.empty()) {
+            useGuide = guideQ.top().f <= (int)std::round(config.mhaAnchorBias * anchorQ.top().f);
+        }
+
+        NodeWrapper top = useGuide ? guideQ.top() : anchorQ.top();
+        if (useGuide) guideQ.pop(); else anchorQ.pop();
+
+        State current = statePool[top.idx];
+        auto itg = bestG.find(current);
+        if (itg == bestG.end() || itg->second != current.steps) continue;
+        if (closedSet.count(current)) continue;
+        closedSet.insert(current);
+
+        processed++;
+
+        if (current.carrotsCollected == TOTAL_CARROTS && current.eggsPlanted == TOTAL_EGGS &&
+            current.mapData[current.y * COLS + current.x] == Tiles::END) {
+            return reconstruct(top.idx);
+        }
+
+        for (auto& d : dirs) {
+            State next;
+            if (!tryMove(current, d[0], d[1], next)) continue;
+            if (config.usePruning) {
+                bool ok = (config.deadlockLevel >= 2) ? checkDeadlockLevel2(next) : checkDeadlockLevel1(next);
+                if (!ok) continue;
+            }
+            auto best = bestG.find(next);
+            if (best == bestG.end() || next.steps < best->second) {
+                next.parentIdx = top.idx;
+                bestG[next] = next.steps;
+                statePool.push_back(next);
+                int nIdx = (int)statePool.size() - 1;
+                anchorQ.push({nIdx, keyAnchor(next)});
+                guideQ.push({nIdx, keyGuide(next)});
+            }
+        }
+    }
+
+    return "";
+}
+
 std::string GameSolver::solve(const std::vector<std::string>& rawMap, double weight, int maxNodes, bool usePruning) {
     SolverConfig config;
     config.weight = weight;
@@ -621,6 +839,12 @@ std::string GameSolver::solve(const std::vector<std::string>& rawMap, const Solv
     }
     if (config.strategy == SolveStrategy::GreedyBestFirst) {
         return runGreedyBestFirst(startS, config);
+    }
+    if (config.strategy == SolveStrategy::ARAStar) {
+        return runARAStar(startS, config);
+    }
+    if (config.strategy == SolveStrategy::MHAStar) {
+        return runMHAStar(startS, config);
     }
     return runWeightedAStar(startS, config.weight, config.maxNodes, config.usePruning, config.deadlockLevel).path;
 }

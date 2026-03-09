@@ -7,7 +7,9 @@ enum class SolveStrategy {
     WeightedAStar,
     AnytimeWeightedAStar,
     PortfolioSearch,
-    GreedyBestFirst
+    GreedyBestFirst,
+    ARAStar,
+    MHAStar
 };
 
 struct SolverConfig {
@@ -24,6 +26,14 @@ struct SolverConfig {
     // Portfolio Search 参数
     int portfolioPassCount = 4;
     bool portfolioTogglePruning = true;
+
+    // ARA* 参数
+    double araMinEpsilon = 1.0;
+    double araDecay = 0.8;
+
+    // MHA* 参数
+    double mhaSecondaryWeight = 1.5;
+    double mhaAnchorBias = 1.2;
 };
 
 class GameSolver {
@@ -54,6 +64,11 @@ private:
     std::string runAnytimeWeightedAStar(const State& startS, const SolverConfig& config);
     std::string runPortfolioSearch(const State& startS, const SolverConfig& config);
     std::string runGreedyBestFirst(const State& startS, const SolverConfig& config);
+    std::string runARAStar(const State& startS, const SolverConfig& config);
+    std::string runMHAStar(const State& startS, const SolverConfig& config);
+
+    int heuristicObjectivesOnly(const State& s);
+    int heuristicWithDependencies(const State& s);
 
     // 可达性剪枝
     bool checkDeadlockLevel1(const State& s);
