@@ -91,7 +91,7 @@ void GameSolver::triggerYellow(std::vector<Tile>& m) {
     }
 }
 
-bool GameSolver::checkReachability(const State& s) {
+bool GameSolver::checkDeadlockLevel1(const State& s) {
     int remaining = (TOTAL_CARROTS - s.carrotsCollected) + (TOTAL_EGGS - s.eggsPlanted);
     if (remaining == 0) return true; 
 
@@ -143,6 +143,71 @@ bool GameSolver::checkReachability(const State& s) {
     }
     
     return false;
+}
+
+bool GameSolver::checkDeadlockLevel2(const State& s) {
+    if (!checkDeadlockLevel1(s)) return false;
+
+    int remaining = (TOTAL_CARROTS - s.carrotsCollected) + (TOTAL_EGGS - s.eggsPlanted);
+
+    std::vector<bool> visited(ROWS * COLS, false);
+    std::queue<int> q;
+    int startIdx = s.y * COLS + s.x;
+    q.push(startIdx);
+    visited[startIdx] = true;
+
+    bool keySReachable = s.hasS;
+    bool keyGReachable = s.hasG;
+    bool keyCReachable = s.hasC;
+    bool hasLockS = false, hasLockG = false, hasLockC = false;
+    int endIdx = -1;
+
+    for (int i = 0; i < (int)s.mapData.size(); ++i) {
+        if (s.mapData[i] == Tiles::LOCK_S) hasLockS = true;
+        else if (s.mapData[i] == Tiles::LOCK_G) hasLockG = true;
+        else if (s.mapData[i] == Tiles::LOCK_C) hasLockC = true;
+        else if (s.mapData[i] == Tiles::END) endIdx = i;
+    }
+
+    int dirs[4][2] = {{0,1}, {0,-1}, {1,0}, {-1,0}};
+    while (!q.empty()) {
+        int curr = q.front();
+        q.pop();
+
+        Tile t = s.mapData[curr];
+        if (t == Tiles::KEY_S) keySReachable = true;
+        if (t == Tiles::KEY_G) keyGReachable = true;
+        if (t == Tiles::KEY_C) keyCReachable = true;
+
+        int cx = curr % COLS;
+        int cy = curr / COLS;
+        for (auto& d : dirs) {
+            int nx = cx + d[0], ny = cy + d[1];
+            if (nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS) continue;
+            int nIdx = ny * COLS + nx;
+            if (visited[nIdx]) continue;
+
+            Tile nt = s.mapData[nIdx];
+            bool blocked = false;
+            if (nt == Tiles::FENCE || nt == Tiles::GRASS || nt == Tiles::EGG_PLANTED || nt == Tiles::TRAP_ON) blocked = true;
+            if (nt == Tiles::LOCK_S && !s.hasS) blocked = true;
+            if (nt == Tiles::LOCK_G && !s.hasG) blocked = true;
+            if (nt == Tiles::LOCK_C && !s.hasC) blocked = true;
+
+            if (!blocked) {
+                visited[nIdx] = true;
+                q.push(nIdx);
+            }
+        }
+    }
+
+    if (!s.hasS && hasLockS && !keySReachable) return false;
+    if (!s.hasG && hasLockG && !keyGReachable) return false;
+    if (!s.hasC && hasLockC && !keyCReachable) return false;
+
+    if (remaining == 0 && endIdx >= 0 && !visited[endIdx]) return false;
+
+    return true;
 }
 
 // =========================================================
@@ -295,7 +360,7 @@ bool GameSolver::tryMove(const State& cur, int dx, int dy, State& next) {
 }
 
 
-GameSolver::SearchResult GameSolver::runWeightedAStar(const State& startS, double weight, int nodeBudget, bool usePruning) {
+GameSolver::SearchResult GameSolver::runWeightedAStar(const State& startS, double weight, int nodeBudget, bool usePruning, int deadlockLevel) {
     SearchResult result;
 
     if (nodeBudget <= 0) {
@@ -349,7 +414,10 @@ GameSolver::SearchResult GameSolver::runWeightedAStar(const State& startS, doubl
             State next;
             if (!tryMove(current, d[0], d[1], next)) continue;
 
-            if (usePruning && !checkReachability(next)) continue;
+            if (usePruning) {
+                bool ok = (deadlockLevel >= 2) ? checkDeadlockLevel2(next) : checkDeadlockLevel1(next);
+                if (!ok) continue;
+            }
 
             if (closedSet.find(next) == closedSet.end()) {
                 next.parentIdx = top.idx;
@@ -376,7 +444,7 @@ std::string GameSolver::runAnytimeWeightedAStar(const State& startS, const Solve
     std::string bestPath;
 
     while (remainingBudget > 0) {
-        SearchResult passResult = runWeightedAStar(startS, currentWeight, remainingBudget, config.usePruning);
+        SearchResult passResult = runWeightedAStar(startS, currentWeight, remainingBudget, config.usePruning, config.deadlockLevel);
         remainingBudget -= passResult.processed;
 
         if (!passResult.path.empty()) {
@@ -430,7 +498,7 @@ std::string GameSolver::runPortfolioSearch(const State& startS, const SolverConf
             pruneFlag = !pruneFlag;
         }
 
-        SearchResult res = runWeightedAStar(startS, w, budgetForRun, pruneFlag);
+        SearchResult res = runWeightedAStar(startS, w, budgetForRun, pruneFlag, config.deadlockLevel);
         remainingBudget -= std::min(remainingBudget, res.processed);
 
         if (!res.path.empty()) {
@@ -489,7 +557,10 @@ std::string GameSolver::runGreedyBestFirst(const State& startS, const SolverConf
         for (auto& d : dirs) {
             State next;
             if (!tryMove(current, d[0], d[1], next)) continue;
-            if (config.usePruning && !checkReachability(next)) continue;
+            if (config.usePruning) {
+                bool ok = (config.deadlockLevel >= 2) ? checkDeadlockLevel2(next) : checkDeadlockLevel1(next);
+                if (!ok) continue;
+            }
 
             if (closedSet.find(next) == closedSet.end()) {
                 next.parentIdx = top.idx;
@@ -551,5 +622,5 @@ std::string GameSolver::solve(const std::vector<std::string>& rawMap, const Solv
     if (config.strategy == SolveStrategy::GreedyBestFirst) {
         return runGreedyBestFirst(startS, config);
     }
-    return runWeightedAStar(startS, config.weight, config.maxNodes, config.usePruning).path;
+    return runWeightedAStar(startS, config.weight, config.maxNodes, config.usePruning, config.deadlockLevel).path;
 }

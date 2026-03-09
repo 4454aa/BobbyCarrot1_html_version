@@ -14,6 +14,7 @@ struct SolverConfig {
     double weight = 1.0;
     int maxNodes = 2000000;
     bool usePruning = false;
+    int deadlockLevel = 1; // 1=basic, 2=strict
     SolveStrategy strategy = SolveStrategy::WeightedAStar;
 
     // Anytime Weighted A* 参数
@@ -49,13 +50,14 @@ private:
     int heuristic(const State& s, double weight);
     bool tryMove(const State& cur, int dx, int dy, State& next);
 
-    SearchResult runWeightedAStar(const State& startS, double weight, int nodeBudget, bool usePruning);
+    SearchResult runWeightedAStar(const State& startS, double weight, int nodeBudget, bool usePruning, int deadlockLevel);
     std::string runAnytimeWeightedAStar(const State& startS, const SolverConfig& config);
     std::string runPortfolioSearch(const State& startS, const SolverConfig& config);
     std::string runGreedyBestFirst(const State& startS, const SolverConfig& config);
 
     // 可达性剪枝
-    bool checkReachability(const State& s);
+    bool checkDeadlockLevel1(const State& s);
+    bool checkDeadlockLevel2(const State& s);
 
     // 辅助函数
     bool isCorner(Tile t);
