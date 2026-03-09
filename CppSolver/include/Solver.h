@@ -6,7 +6,8 @@
 enum class SolveStrategy {
     WeightedAStar,
     AnytimeWeightedAStar,
-    PortfolioSearch
+    PortfolioSearch,
+    GreedyBestFirst
 };
 
 struct SolverConfig {
@@ -51,6 +52,7 @@ private:
     SearchResult runWeightedAStar(const State& startS, double weight, int nodeBudget, bool usePruning);
     std::string runAnytimeWeightedAStar(const State& startS, const SolverConfig& config);
     std::string runPortfolioSearch(const State& startS, const SolverConfig& config);
+    std::string runGreedyBestFirst(const State& startS, const SolverConfig& config);
 
     // 可达性剪枝
     bool checkReachability(const State& s);

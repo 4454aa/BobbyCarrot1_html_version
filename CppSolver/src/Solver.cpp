@@ -445,6 +445,65 @@ std::string GameSolver::runPortfolioSearch(const State& startS, const SolverConf
     return bestPath;
 }
 
+std::string GameSolver::runGreedyBestFirst(const State& startS, const SolverConfig& config) {
+    if (config.maxNodes <= 0) return "";
+
+    std::vector<State> statePool;
+    statePool.reserve(1000000);
+
+    State greedyStart = startS;
+    greedyStart.estimatedTotal = heuristic(greedyStart, std::max(1.0, config.weight));
+    statePool.push_back(greedyStart);
+
+    std::priority_queue<NodeWrapper, std::vector<NodeWrapper>, std::greater<NodeWrapper>> openSet;
+    openSet.push({0, greedyStart.estimatedTotal});
+
+    std::unordered_set<State, StateHash> closedSet;
+    int dirs[4][2] = {{0,-1}, {0,1}, {-1,0}, {1,0}};
+    int processed = 0;
+
+    while (!openSet.empty()) {
+        NodeWrapper top = openSet.top();
+        openSet.pop();
+        State current = statePool[top.idx];
+
+        if (closedSet.count(current)) continue;
+        closedSet.insert(current);
+
+        processed++;
+        if (processed > config.maxNodes) return "";
+
+        if (current.carrotsCollected == TOTAL_CARROTS && current.eggsPlanted == TOTAL_EGGS) {
+            if (current.mapData[current.y * COLS + current.x] == Tiles::END) {
+                std::string path = "";
+                int currIdx = top.idx;
+                while (currIdx != 0) {
+                    path += statePool[currIdx].moveChar;
+                    currIdx = statePool[currIdx].parentIdx;
+                }
+                std::reverse(path.begin(), path.end());
+                return path;
+            }
+        }
+
+        for (auto& d : dirs) {
+            State next;
+            if (!tryMove(current, d[0], d[1], next)) continue;
+            if (config.usePruning && !checkReachability(next)) continue;
+
+            if (closedSet.find(next) == closedSet.end()) {
+                next.parentIdx = top.idx;
+                // Greedy Best-First: 仅按 h 排序
+                next.estimatedTotal = heuristic(next, std::max(1.0, config.weight));
+                statePool.push_back(next);
+                openSet.push({(int)statePool.size() - 1, next.estimatedTotal});
+            }
+        }
+    }
+
+    return "";
+}
+
 std::string GameSolver::solve(const std::vector<std::string>& rawMap, double weight, int maxNodes, bool usePruning) {
     SolverConfig config;
     config.weight = weight;
@@ -488,6 +547,9 @@ std::string GameSolver::solve(const std::vector<std::string>& rawMap, const Solv
     }
     if (config.strategy == SolveStrategy::PortfolioSearch) {
         return runPortfolioSearch(startS, config);
+    }
+    if (config.strategy == SolveStrategy::GreedyBestFirst) {
+        return runGreedyBestFirst(startS, config);
     }
     return runWeightedAStar(startS, config.weight, config.maxNodes, config.usePruning).path;
 }

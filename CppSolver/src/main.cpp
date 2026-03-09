@@ -40,6 +40,7 @@ void applyCliOverrides(int argc, char** argv, SolverConfig& config) {
         if (!strategy.empty()) {
             if (strategy == "1") config.strategy = SolveStrategy::AnytimeWeightedAStar;
             else if (strategy == "2") config.strategy = SolveStrategy::PortfolioSearch;
+            else if (strategy == "3") config.strategy = SolveStrategy::GreedyBestFirst;
             else config.strategy = SolveStrategy::WeightedAStar;
             continue;
         }
@@ -108,13 +109,15 @@ int main(int argc, char** argv) {
     int strategyDefault = 0;
     if (config.strategy == SolveStrategy::AnytimeWeightedAStar) strategyDefault = 1;
     else if (config.strategy == SolveStrategy::PortfolioSearch) strategyDefault = 2;
+    else if (config.strategy == SolveStrategy::GreedyBestFirst) strategyDefault = 3;
 
-    std::cout << "Solve Strategy (0=Weighted A*, 1=Anytime Weighted A*, 2=Portfolio Search) [Default: " << strategyDefault << "]: ";
+    std::cout << "Solve Strategy (0=Weighted A*, 1=Anytime Weighted A*, 2=Portfolio Search, 3=Greedy Best-First) [Default: " << strategyDefault << "]: ";
     std::string strategyLine;
     std::getline(std::cin, strategyLine);
     if (!strategyLine.empty()) {
         if (strategyLine == "1") config.strategy = SolveStrategy::AnytimeWeightedAStar;
         else if (strategyLine == "2") config.strategy = SolveStrategy::PortfolioSearch;
+        else if (strategyLine == "3") config.strategy = SolveStrategy::GreedyBestFirst;
         else config.strategy = SolveStrategy::WeightedAStar;
     }
 
@@ -145,6 +148,7 @@ int main(int argc, char** argv) {
     std::cout << "Config: Strategy=";
     if (config.strategy == SolveStrategy::AnytimeWeightedAStar) std::cout << "Anytime Weighted A*";
     else if (config.strategy == SolveStrategy::PortfolioSearch) std::cout << "Portfolio Search";
+    else if (config.strategy == SolveStrategy::GreedyBestFirst) std::cout << "Greedy Best-First";
     else std::cout << "Weighted A*";
     std::cout << ", Weight=" << config.weight
               << ", MaxNodes=" << config.maxNodes
