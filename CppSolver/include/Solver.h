@@ -3,23 +3,76 @@
 #include <string>
 #include <vector>
 
+enum class SolveStrategy {
+    WeightedAStar,
+    AnytimeWeightedAStar,
+    PortfolioSearch,
+    GreedyBestFirst,
+    ARAStar,
+    MHAStar
+};
+
+struct SolverConfig {
+    double weight = 1.0;
+    int maxNodes = 2000000;
+    bool usePruning = false;
+    int deadlockLevel = 1; // 1=basic, 2=strict
+    SolveStrategy strategy = SolveStrategy::WeightedAStar;
+
+    // Anytime Weighted A* 参数
+    double anytimeMinWeight = 1.0;
+    double anytimeWeightDecay = 0.5;
+
+    // Portfolio Search 参数
+    int portfolioPassCount = 4;
+    bool portfolioTogglePruning = true;
+
+    // ARA* 参数
+    double araMinEpsilon = 1.0;
+    double araDecay = 0.8;
+
+    // MHA* 参数
+    double mhaSecondaryWeight = 1.5;
+    double mhaAnchorBias = 1.2;
+};
+
 class GameSolver {
 public:
-    std::string solve(const std::vector<std::string>& rawMap, 
-                      double weight, 
-                      int maxNodes, 
+    std::string solve(const std::vector<std::string>& rawMap,
+                      double weight,
+                      int maxNodes,
                       bool usePruning);
+
+    std::string solve(const std::vector<std::string>& rawMap,
+                      const SolverConfig& config);
 
 private:
     int ROWS, COLS;
     int TOTAL_CARROTS, TOTAL_EGGS;
-    
+
+    struct SearchResult {
+        std::string path;
+        int processed = 0;
+        bool reachedNodeLimit = false;
+    };
+
     // 核心逻辑
-    int heuristic(const State& s, double weight); // 增加 weight 参数
+    int heuristic(const State& s, double weight);
     bool tryMove(const State& cur, int dx, int dy, State& next);
-    
+
+    SearchResult runWeightedAStar(const State& startS, double weight, int nodeBudget, bool usePruning, int deadlockLevel);
+    std::string runAnytimeWeightedAStar(const State& startS, const SolverConfig& config);
+    std::string runPortfolioSearch(const State& startS, const SolverConfig& config);
+    std::string runGreedyBestFirst(const State& startS, const SolverConfig& config);
+    std::string runARAStar(const State& startS, const SolverConfig& config);
+    std::string runMHAStar(const State& startS, const SolverConfig& config);
+
+    int heuristicObjectivesOnly(const State& s);
+    int heuristicWithDependencies(const State& s);
+
     // 可达性剪枝
-    bool checkReachability(const State& s);
+    bool checkDeadlockLevel1(const State& s);
+    bool checkDeadlockLevel2(const State& s);
 
     // 辅助函数
     bool isCorner(Tile t);
